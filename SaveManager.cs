@@ -8,163 +8,91 @@ using System.Xml;
 
 public class SaveManager : MonoBehaviour
 {
-   private SpriteRenderer spriteRenderer;      // Current player sprite
- public bool isAlive = true;                 // Is the player alive
+    // Set game data values
+    public void SetGameData(Save save)
+    {
+        GameManager.instance.pesos = save.pesos;
+        GameManager.instance.experience = save.experience;
+        GameManager.instance.weapon.SetWeaponLevel(save.WeaponLevel);
+        GameManager.instance.player.rage = (float)save.rage;
+    }
 
- [Header("------Rage System------")]
- public float rage = 0;                      // Rage
- public float maxRage = 50;                  // Maximum rage value
+    // JSON storage
+    public void SaveGame()
+    {
+        // 1. Create save information
+        Save save = new Save
+        {
+            pesos = GameManager.instance.pesos,
+            experience = GameManager.instance.experience,
+            WeaponLevel = GameManager.instance.weapon.weaponLevel,
+            rage = (int)GameManager.instance.player.rage
+        };
 
- // Turning attack correction system
- private float temp = 0f;
+        string path = Application.dataPath + "/SaveData.json";
 
- protected override void Start()
- {
-     base.Start();
-     GetComponent<BoxCollider2D>().enabled = true;
-     spriteRenderer = GetComponent<SpriteRenderer>();
-     ImmuneTime = 0.75f;
-     Player.DontDestroyOnLoad(gameObject);
-     OnRageChange(0f);
- }
+        // 2. Use JsonMapper to convert the save object into a Json-formatted string
+        string jsonStr = JsonMapper.ToJson(save);
 
- private void FixedUpdate()
- {
-     // Get movement values, use the common movement function UpdateMotor(), move according to the specified position/movement speed multiplier
-     if (isAlive)
-     {
-         float x = Input.GetAxisRaw("Horizontal");
-         float y = Input.GetAxisRaw("Vertical");
+        // 3. Create a StreamWriter and write the string
+        StreamWriter sw = new StreamWriter(path);
+        sw.Write(jsonStr);
+        sw.Close();
 
-         // Check if the player's direction before and after movement is the same
-         // If different, immediately stop the Swing animation of the Weapon and switch to idle
-         // Otherwise, proceed normally and wait for the Swing animation to finish before switching to idle
-         // Functionality: Stop attacking immediately if turning during the attack
-         if (transform.localScale.x == temp)
-             GameManager.instance.weapon.animator.SetBool("SameDirection", true);
-         else GameManager.instance.weapon.animator.SetBool("SameDirection", false);
-         temp = transform.localScale.x;
+        Debug.Log("Saved");
+        // GameManager.instance.UIManager.ShowText("",)
+        // GameManager.instance.ShowText("Game Saved Successfully", 40, Color.white, transform.position + new Vector3(0, 0.18f, 0), Vector3.zero, showTime);
+    }
 
-         UpdateMotor(new Vector3(x, y, 0), 1);
+    public void SaveGame(Save save)
+    {
+        string path = Application.dataPath + "/SaveData.json";
+        string jsonStr = JsonMapper.ToJson(save);
 
-         // Note: Using the following method to read input would significantly increase GCAlloc within FixedUpdate
-         //
-         // moveTo.x = Input.GetAxisRaw("Horizontal");
-         // moveTo.y = Input.GetAxisRaw("Vertical");
-         // UpdateMotor(moveTo, 1);
-     }
-     else
-         pushDirection = Vector3.zero;
-     // The above else statement has a problem:
-     // Problem description: When the player dies and respawns, they are immediately pushed back a certain distance
-     // Problem analysis: The reason is that the player dies from a fatal blow, but is not pushed back, so when pushDirection persists after respawn
-     // Solution: Add the else statement above to reset pushDirection, similarly for Enemy
- }
+        StreamWriter sw = new StreamWriter(path);
+        sw.Write(jsonStr);
+        sw.Close();
 
- // Sprite change function
- public void SwapSprite(int SkinID)
- {
-     GetComponent<SpriteRenderer>().sprite = GameManager.instance.playerSprites[SkinID];
- }
+        Debug.Log("Saved");
+    }
 
- // Level up function: Increase maximum health and restore current health
- public void OnLevelUp()
- {
-     maxHitPoint += 10;
-     hitPoint = maxHitPoint;
+    // JSON load
+    public void LoadGame()
+    {
+        string path = Application.dataPath + "/SaveData.json";
 
-     GameManager.instance.OnUIChange();
- }
+        if (File.Exists(path))
+        {
+            // 1. Create a StreamReader to read the stream
+            StreamReader sr = new StreamReader(path);
 
- // Set level function (only for internal use in GameManager)
- public void SetLevel(int level)
- {
-     for (int i = 0; i < level; i++)
-         OnLevelUp();
- }
+            // 2.
+            string jsonStr = sr.ReadToEnd();
+            sr.Close();
 
- // Player damage function: Reduce health, increase rage, refresh health UI
- protected override void ReceiveDamage(Damag dmg)
- {
-     if (!isAlive)
-         return;
+            // 3.
+            Save save = JsonMapper.ToObject<Save>(jsonStr);
+            SetGameData(save);
 
-     // If not in immune time, take damage
-     if (Time.time - lastImmune > ImmuneTime)
-     {
-         lastImmune = Time.time;
-         hitPoint -= dmg.damageAmount;
-         pushDirection = (transform.position - dmg.origin).normalized * dmg.pushForce;
+            Debug.Log("Game Loaded");
+        }
+        else
+        {
+            NewGame();
+            LoadGame();
+        }
+    }
 
-         // Rage system:
-         // If currently using a skill, rage cannot accumulate
-         if (!GameManager.instance.weapon.raging)
-             OnRageChange(dmg.damageAmount);
-     }
-
-     if (hitPoint <= 0)
-     {
-         hitPoint = 0;
-         Death();
-     }
-
-     GameManager.instance.OnUIChange();
- }
-
- // Rage accumulation system
- public void OnRageChange(float alter)
- {
-     if (rage < maxRage)
-         rage += alter;
-     if (rage >= maxRage)
-         rage = maxRage;
-
-     if (rage == maxRage)
-         GameManager.instance.weapon.CanRageSkill = true;
- }
-
- // Heal function: Health restoration, display healing UI text, and refresh health UI
- public void Heal(int healingAmount)
- {
-     if (hitPoint == maxHitPoint)
-         return;
-
-     hitPoint += healingAmount;
-     if (hitPoint > maxHitPoint)
-         hitPoint = maxHitPoint;
-
-     GameManager.instance.ShowText("+" + healingAmount.ToString() + "hp", 25, Color.green, transform.position, Vector3.up * 30, 1.0f);
-     GameManager.instance.OnUIChange();
- }
-
- // Player death function
- protected override void Death()
- {
-     // Change life state and lie down
-     isAlive = false;
-     transform.localEulerAngles = new Vector3(0, 0, 90);
-
-     // Show death panel
-     GameManager.instance.UIManager.ShowDeathAnimation();
-
-     // Wait for a certain time before respawn and restart
-     StartCoroutine("WaitingForRespawn");
- }
-
- // Player respawn function
- public void Respawn()
- {
-     // Configure parameters for respawn
-     Heal(maxHitPoint);
-     isAlive = true;
-     transform.localEulerAngles = Vector3.zero;
- }
-
- IEnumerator WaitingForRespawn()
- {
-     yield return new WaitForSeconds(6);
-     GameManager.instance.Respawn();
-     GameManager.instance.OnUIChange();
- }
+    // Create a new save
+    public void NewGame()
+    {
+        Save save = new Save
+        {
+            pesos = 0,
+            experience = 0,
+            WeaponLevel = 0,
+            rage = 0
+        };
+        SaveGame(save);
+    }
 }
-
